@@ -172,7 +172,8 @@ export const sendDataToWebhook = async (
     const simplifiedData = {
       name: participant.name,
       email: participant.email,
-      score: correctAnswers
+      score: correctAnswers,
+      "quizz-id": "Quizz-Flow-Pro"
     };
     
     console.log("Simplified data being sent:", simplifiedData);
