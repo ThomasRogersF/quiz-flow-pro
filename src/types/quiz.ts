@@ -76,6 +76,37 @@ export interface QuizParticipant {
   answers: QuizAnswer[];
 }
 
+// Simplified webhook payload structure
+export interface SimplifiedWebhookPayload {
+  name: string;
+  email: string;
+  score: number;
+  "quizz-id": string;
+  submissionDate: string;
+  timeTakenSeconds: number;
+  timeTakenFormatted: string;
+  answers: SimplifiedAnswer[];
+  totalQuestions: number;
+  quizTitle: string;
+  resultLevel?: string;
+}
+
+// Simplified answer structure
+export interface SimplifiedAnswer {
+  questionId: string;
+  questionText: string;
+  userAnswer: string | string[] | File | null;
+  userAnswerText: string;
+  isCorrect: boolean;
+  timeSpentSeconds: number;
+}
+
+// Enhanced participant with timing data
+export interface EnhancedQuizParticipant extends QuizParticipant {
+  quizStartTime?: Date;
+  questionTimings?: Record<string, number>;
+}
+
 export interface QuizAdminProps {
   config: QuizConfig;
   onConfigUpdate: (config: QuizConfig) => void;

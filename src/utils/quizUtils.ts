@@ -1,4 +1,4 @@
-import { QuizAnswer, QuizQuestion, ResultTemplate, QuizConfig } from "@/types/quiz";
+import { QuizAnswer, QuizQuestion, ResultTemplate, QuizConfig, SimplifiedWebhookPayload, SimplifiedAnswer, EnhancedQuizParticipant } from "@/types/quiz";
 import { QuestionTemplate, QuizTemplateCollection } from "@/types/quizTemplates";
 
 export const getNextQuestionId = (
@@ -153,8 +153,9 @@ export const getOptionText = (questionId: string, optionValue: string | string[]
 
 export const sendDataToWebhook = async (
   webhookUrl: string,
-  participant: { name: string; email: string; answers: QuizAnswer[] },
-  quizConfig: QuizConfig
+  participant: EnhancedQuizParticipant,
+  quizConfig: QuizConfig,
+  personalizedResult?: ResultTemplate | null
 ): Promise<boolean> => {
   try {
     console.log("Attempting to send data to webhook:", webhookUrl);
@@ -165,18 +166,56 @@ export const sendDataToWebhook = async (
       return true;
     }
     
-    // Calculate score by counting the number of correct answers
-    const correctAnswers = countCorrectAnswers(participant.answers);
+    // Calculate timing information
+    const submissionDate = new Date().toISOString();
+    const completedAt = new Date();
     
-    // Build simplified data structure
-    const simplifiedData = {
+    const totalSeconds = participant.quizStartTime
+      ? Math.floor((completedAt.getTime() - participant.quizStartTime.getTime()) / 1000)
+      : 0;
+    
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const formatted = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    
+    // Calculate score and percentage
+    const correctAnswers = countCorrectAnswers(participant.answers);
+    const totalQuestions = participant.answers.length;
+    const percentageScore = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+    
+    // Create enhanced answers with additional information
+    const enhancedAnswers: SimplifiedAnswer[] = participant.answers.map(answer => {
+      const questionText = getQuestionText(answer.questionId, quizConfig);
+      const userAnswerText = getOptionText(answer.questionId, answer.value, quizConfig);
+      const isCorrect = isAnswerCorrect(answer);
+      const timeSpentSeconds = participant.questionTimings?.[answer.questionId] || 0;
+      
+      return {
+        questionId: answer.questionId,
+        questionText,
+        userAnswer: answer.value,
+        userAnswerText,
+        isCorrect,
+        timeSpentSeconds
+      };
+    });
+    
+    // Build enhanced webhook payload
+    const webhookPayload: SimplifiedWebhookPayload = {
       name: participant.name,
       email: participant.email,
       score: correctAnswers,
-      "quizz-id": "Quizz-Flow-Pro"
+      "quizz-id": "Quizz-Flow-Pro",
+      submissionDate,
+      timeTakenSeconds: totalSeconds,
+      timeTakenFormatted: formatted,
+      answers: enhancedAnswers,
+      totalQuestions,
+      quizTitle: quizConfig.title,
+      resultLevel: personalizedResult?.title
     };
     
-    console.log("Simplified data being sent:", simplifiedData);
+    console.log("Enhanced webhook payload:", webhookPayload);
     
     // Make the actual API call to the webhook
     const response = await fetch(webhookUrl, {
@@ -184,7 +223,7 @@ export const sendDataToWebhook = async (
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(simplifiedData),
+      body: JSON.stringify(webhookPayload),
     });
     
     if (!response.ok) {

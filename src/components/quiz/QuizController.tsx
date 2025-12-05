@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
-import { QuizConfig, QuizParticipant, QuizAnswer, ResultTemplate } from "@/types/quiz";
+import { QuizConfig, QuizParticipant, QuizAnswer, ResultTemplate, EnhancedQuizParticipant } from "@/types/quiz";
 import { getNextQuestionId, getPersonalizedResult, sendDataToWebhook, isAnswerCorrect } from "@/utils/quizUtils";
 import IntroductionPage from "./IntroductionPage";
 import QuestionCard from "./QuestionCard";
@@ -21,16 +21,19 @@ const QuizController = ({ config }: QuizControllerProps) => {
     config.questions.length > 0 ? config.questions[0].id : null
   );
   const [questionHistory, setQuestionHistory] = useState<string[]>([]);
-  const [participant, setParticipant] = useState<QuizParticipant>({
+  const [participant, setParticipant] = useState<EnhancedQuizParticipant>({
     name: "",
     email: "",
-    answers: []
+    answers: [],
+    quizStartTime: undefined,
+    questionTimings: {}
   });
   const [personalizedResult, setPersonalizedResult] = useState<ResultTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const [gradedAnswers, setGradedAnswers] = useState<JourneyAnswer[]>([]);
   const [userContext, setUserContext] = useState<JourneyUserContext | undefined>(undefined);
+  const [questionStartTime, setQuestionStartTime] = useState<Date | null>(null);
 
   // Effect to handle completion of questions and transition to user info stage
   useEffect(() => {
@@ -46,10 +49,13 @@ const QuizController = ({ config }: QuizControllerProps) => {
 
   const handleStartQuiz = () => {
     console.log("Starting quiz");
+    const startTime = new Date();
+    setParticipant(prev => ({ ...prev, quizStartTime: startTime }));
     setStage("questions");
     // Add first question to history when starting
     if (config.questions.length > 0) {
       setQuestionHistory([config.questions[0].id]);
+      setQuestionStartTime(startTime);
     }
   };
 
@@ -57,6 +63,18 @@ const QuizController = ({ config }: QuizControllerProps) => {
 
   const handleAnswer = (answer: QuizAnswer) => {
     console.log("Answer received:", answer);
+    
+    // Calculate time spent on current question
+    if (questionStartTime && currentQuestionId) {
+      const timeSpent = Math.floor((new Date().getTime() - questionStartTime.getTime()) / 1000);
+      setParticipant(prev => ({
+        ...prev,
+        questionTimings: {
+          ...prev.questionTimings,
+          [currentQuestionId]: timeSpent
+        }
+      }));
+    }
     
     // Update or add the answer
     const existingIndex = participant.answers.findIndex(
@@ -73,6 +91,9 @@ const QuizController = ({ config }: QuizControllerProps) => {
         answers: [...participant.answers, answer]
       });
     }
+    
+    // Reset question start time for next question
+    setQuestionStartTime(new Date());
   };
   
   const handleNext = () => {
@@ -98,6 +119,7 @@ const QuizController = ({ config }: QuizControllerProps) => {
       setTimeout(() => {
         setCurrentQuestionId(nextQuestionId);
         setQuestionHistory(prev => [...prev, nextQuestionId]);
+        setQuestionStartTime(new Date());
         setIsLoading(false);
       }, 100); // Small delay for better UX
     } else {
@@ -133,7 +155,7 @@ const QuizController = ({ config }: QuizControllerProps) => {
     console.log("User info submitted:", name, email);
     
     // Update participant info
-    const updatedParticipant = {
+    const updatedParticipant: EnhancedQuizParticipant = {
       ...participant,
       name,
       email
@@ -160,7 +182,7 @@ const QuizController = ({ config }: QuizControllerProps) => {
     
     // Send data to webhook if configured
     if (config.webhookUrl) {
-      sendDataToWebhook(config.webhookUrl, updatedParticipant, config)
+      sendDataToWebhook(config.webhookUrl, updatedParticipant, config, personalizedResult)
         .then((success) => {
           if (!success) {
             toast({
